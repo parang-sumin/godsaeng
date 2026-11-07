@@ -1,57 +1,83 @@
 /* ───────────── 외국어 (일본어·중국어) ───────────── */
 
 const LANG_HEAD = ['id', 'lang', 'type', 'front', 'reading', 'meaning', 'note', 'created', 'box', 'due', 'reviews', 'lessonId'];
-const LESSON_HEAD = ['id', 'date', 'lang', 'json'];
+const LESSON_HEAD = ['id', 'date', 'lang', 'json', 'status']; // status: current(지금 배우는 중) / ready(미리 만들어 둠) / done(익힘)
 const SRS_DAYS = [0, 1, 3, 7, 14, 30, 60]; // 상자별 다음 복습까지 날짜
-const LANG_HOUR = 6;      // 매일 새 레슨 만드는 시각
+const LANG_HOUR = 6;      // 매일 새벽: 다음 레슨 미리 만들어 두기
 const LANG_ALERT_HOUR = 21; // 복습 알림 시각
 const LANG_NAME = { ja: '일본어', zh: '중국어' };
 
 function ymdNum_(d) { return Number(fmt_(d || new Date(), 'yyyyMMdd')); }
+function lessonStatus_(r) { return r.status || 'current'; } // 예전 레슨(상태 없음)은 '지금 배우는 중'
 
-/** 매일 새 레슨 만들기 (트리거) */
+/** 트리거(매일 새벽 + 다음 레슨 누른 직후): 언어마다 '다음 레슨'을 하나씩 미리 만들어 둠 */
 function makeLangLessons() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'prefetchLang').forEach(t => ScriptApp.deleteTrigger(t));
   if (!prop_('GEMINI_API_KEY')) return '키 없음';
+  const lt = tbl_('LangLessons', LESSON_HEAD);
   const out = [];
   ['ja', 'zh'].forEach(lang => {
-    try { out.push(makeLesson_(lang)); } catch (e) { console.warn(lang + ' 레슨 실패: ' + e); out.push(lang + ' 실패 ' + String(e).slice(0, 150)); }
+    try {
+      const mine = lt.rows().filter(r => r.id && r.lang === lang);
+      if (!mine.some(r => lessonStatus_(r) === 'current')) { out.push(makeLesson_(lang, 'current')); }
+      if (!lt.rows().some(r => r.id && r.lang === lang && r.status === 'ready')) out.push(makeLesson_(lang, 'ready'));
+      else out.push(lang + ' 다음 레슨 준비됨');
+    } catch (e) { console.warn(lang + ' 레슨 실패: ' + e); out.push(lang + ' 실패 ' + String(e).slice(0, 150)); }
   });
   return out.join(' | ');
 }
+function prefetchLang() { return makeLangLessons(); }
 
-function makeLesson_(lang) {
-  const date = fmt_(new Date(), 'yyyy-MM-dd');
-  const lid = 'L' + date.replace(/-/g, '') + lang;
+/** 이미 배운(또는 준비된) 문법·단어 목록 — 중복 방지용 */
+function learnedList_(lang) {
+  const list = [];
+  tbl_('LangLessons', LESSON_HEAD).rows().filter(r => r.id && r.lang === lang).forEach(r => {
+    try {
+      const d = JSON.parse(r.json);
+      if (lang === 'ja') { if (d.grammar && d.grammar.pattern) list.push(d.grammar.pattern); }
+      else (d.words || []).forEach(w => w.zh && list.push(w.zh));
+    } catch (e) {}
+  });
+  return list;
+}
+
+function makeLesson_(lang, status) {
   const lt = tbl_('LangLessons', LESSON_HEAD);
-  if (lt.get(lid)) return lang + ' 이미 있음';
-  const ct = tbl_('LangCards', LANG_HEAD);
-  const cards = ct.rows().filter(r => r.id && r.lang === lang);
-  const day = lt.rows().filter(r => r.lang === lang).length + 1;
+  const day = lt.rows().filter(r => r.id && r.lang === lang).length + 1;
+  const learned = learnedList_(lang).slice(lang === 'ja' ? -150 : -400);
   let prompt;
   if (lang === 'ja') {
-    const learned = cards.filter(c => c.type === 'grammar').map(c => c.front).slice(-120);
     prompt =
       '당신은 한국인 학습자를 위한 일본어 선생님입니다. 학습자는 애니메이션을 많이 봐서 단어와 듣기는 꽤 되지만 문법이 약합니다.\n' +
-      '오늘은 ' + day + '일차입니다. JLPT N5부터 N3 순서로 실생활 회화에 자주 쓰는 문법을 하루 1개씩 차근차근 가르쳐 주세요.\n' +
+      '오늘은 ' + day + '번째 레슨입니다. JLPT N5부터 N3 순서로 실생활 회화에 자주 쓰는 문법을 한 번에 1개씩 차근차근 가르쳐 주세요.\n' +
       '이미 배운 문법(겹치지 않게): ' + (learned.join(', ') || '없음') + '\n' +
       '반드시 JSON 한 개만 출력:\n' +
-      '{"title":"오늘 문법 한 줄 제목","grammar":{"pattern":"문법 패턴(예: 〜てもいい)","meaning":"한국어 뜻","level":"N5|N4|N3",' +
+      '{"title":"레슨 한 줄 제목","grammar":{"pattern":"문법 패턴(예: 〜てもいい)","meaning":"한국어 뜻","level":"N5|N4|N3",' +
       '"explain":"한국어로 3~5문장 설명. 접속 방법(동사 て형 등), 뉘앙스, 애니에서 자주 들리는 예 포함","tip":"헷갈리기 쉬운 점 한 문장"},' +
       '"examples":[{"jp":"예문(한자 포함)","kana":"전체 히라가나 읽기","ko":"한국어 뜻"}] (3개, 일상 회화),' +
-      '"talk":[{"jp":"오늘 문법을 쓴 짧은 대화 문장","kana":"히라가나 읽기","ko":"뜻"}] (2개)}';
+      '"talk":[{"jp":"이 문법을 쓴 짧은 대화 문장","kana":"히라가나 읽기","ko":"뜻"}] (2개)}';
   } else {
-    const learned = cards.filter(c => c.type === 'word').map(c => c.front).slice(-300);
     prompt =
-      '당신은 한국인 완전 초보를 위한 중국어(보통화, 간체) 선생님입니다. 오늘은 ' + day + '일차입니다.\n' +
-      (day <= 5 ? '처음 5일 동안은 병음과 성조 기초(1~4성, 경성, 성조 변화)를 하루 한 주제씩 쉽게 설명하고, 인사·자기소개 같은 아주 쉬운 단어를 고르세요.\n'
+      '당신은 한국인 완전 초보를 위한 중국어(보통화, 간체) 선생님입니다. 이번이 ' + day + '번째 레슨입니다.\n' +
+      (day <= 5 ? '처음 5번의 레슨은 병음과 성조 기초(1~4성, 경성, 성조 변화)를 한 번에 한 주제씩 쉽게 설명하고, 인사·자기소개 같은 아주 쉬운 단어를 고르세요.\n'
         : 'HSK 1급부터 순서대로, 실생활에 바로 쓰는 단어를 고르세요.\n') +
       '이미 배운 단어(겹치지 않게): ' + (learned.join(', ') || '없음') + '\n' +
       '반드시 JSON 한 개만 출력:\n' +
-      '{"title":"오늘 주제 한 줄","point":{"topic":"오늘 발음·문법 포인트 제목","explain":"한국어로 3~4문장 쉬운 설명"},' +
+      '{"title":"레슨 주제 한 줄","point":{"topic":"발음·문법 포인트 제목","explain":"한국어로 3~4문장 쉬운 설명"},' +
       '"words":[{"zh":"간체자","py":"성조 표시 병음(예: nǐ hǎo)","ko":"뜻","ex":"아주 쉬운 예문(간체)","expy":"예문 병음","exko":"예문 뜻"}] (5개),' +
-      '"sentences":[{"zh":"오늘 단어로 만든 짧은 문장","py":"병음","ko":"뜻"}] (2개)}';
+      '"sentences":[{"zh":"이 단어들로 만든 짧은 문장","py":"병음","ko":"뜻"}] (2개)}';
   }
   const d = JSON.parse(gemini_(prompt, true));
+  d.day = day;
+  const lid = 'L' + lang + ('000' + day).slice(-4) + '_' + Utilities.getUuid().slice(0, 4);
+  lt.append({ id: lid, date: fmt_(new Date(), 'yyyy-MM-dd HH:mm'), lang, json: JSON.stringify(d), status });
+  if (status === 'current') addLessonCards_(lang, lid, d);
+  return lang + ' ' + day + '번째 ' + (status === 'ready' ? '준비' : '시작');
+}
+
+/** 레슨을 시작할 때 복습 카드 만들기 */
+function addLessonCards_(lang, lid, d) {
+  const ct = tbl_('LangCards', LANG_HEAD);
   const today = ymdNum_(), now = fmt_(new Date(), 'yyyy-MM-dd HH:mm');
   const add = (type, front, reading, meaning, note) => {
     if (!front) return;
@@ -66,8 +92,28 @@ function makeLesson_(lang) {
     (d.words || []).forEach(x => add('word', x.zh, x.py, x.ko, x.ex ? x.ex + ' (' + (x.expy || '') + ') ' + (x.exko || '') : ''));
     (d.sentences || []).forEach(x => add('sentence', x.zh, x.py, x.ko, ''));
   }
-  lt.append({ id: lid, date, lang, json: JSON.stringify(Object.assign({ day }, d)) });
-  return lang + ' ' + day + '일차 OK';
+}
+
+/** 화면에서 부름: 지금 레슨을 '익힘'으로 바꾸고 다음 레슨 시작 */
+function nextLesson(k, lang) {
+  if (!keyOk_(k)) throw new Error('key');
+  if (['ja', 'zh'].indexOf(lang) < 0) throw new Error('lang');
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const lt = tbl_('LangLessons', LESSON_HEAD);
+    lt.rows().filter(r => r.id && r.lang === lang && lessonStatus_(r) === 'current').forEach(r => { r.status = 'done'; lt.put(r); });
+    const ready = lt.rows().filter(r => r.id && r.lang === lang && r.status === 'ready').sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+    if (ready) {
+      ready.status = 'current'; lt.put(ready);
+      addLessonCards_(lang, ready.id, JSON.parse(ready.json));
+    } else {
+      makeLesson_(lang, 'current');
+    }
+  } finally { lock.releaseLock(); }
+  // 그다음 레슨은 뒤에서 미리 만들어 둠 (약 1분 뒤)
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'prefetchLang').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('prefetchLang').timeBased().after(30 * 1000).create();
+  return langData_();
 }
 
 /** 화면에서 부름: 복습 결과 기록. grade 0=몰라요 1=애매 2=알아요 */
@@ -102,12 +148,13 @@ function langData_() {
   const res = {};
   ['ja', 'zh'].forEach(lang => {
     const mine = cards.filter(c => c.lang === lang);
-    const ls = lessons.filter(l => l.lang === lang).sort((a, b) => String(b.id).localeCompare(String(a.id)));
-    const last = ls[0] ? JSON.parse(ls[0].json) : null;
+    const ls = lessons.filter(l => l.lang === lang);
+    const cur = ls.filter(l => lessonStatus_(l) === 'current').sort((a, b) => String(b.id).localeCompare(String(a.id)))[0];
     res[lang] = {
-      lesson: last, lessonDate: ls[0] ? String(ls[0].id).slice(1, 9) : '',
+      lesson: cur ? JSON.parse(cur.json) : null, hasNext: ls.some(l => l.status === 'ready'),
+      doneCount: ls.filter(l => l.status === 'done').length,
       due: mine.filter(c => Number(c.due) <= today).map(c => ({ id: c.id, type: c.type, front: c.front, reading: c.reading, meaning: c.meaning, note: c.note, box: Number(c.box) || 0 })),
-      total: mine.length, mastered: mine.filter(c => Number(c.box) >= 4).length, days: ls.length,
+      total: mine.length, mastered: mine.filter(c => Number(c.box) >= 4).length,
     };
   });
   return res;
@@ -118,7 +165,7 @@ function sendLangAlert() {
   const d = langData_();
   const n = { ja: d.ja.due.length, zh: d.zh.due.length };
   if (!n.ja && !n.zh) return;
-  const title = (d.ja.lesson && d.ja.lesson.title) ? '오늘 문법: ' + d.ja.lesson.title : '';
+  const title = (d.ja.lesson && d.ja.lesson.title) ? '일본어 지금 레슨: ' + d.ja.lesson.title : '';
   sendPush_('📚 오늘 외국어 복습', '일본어 ' + n.ja + '장 · 중국어 ' + n.zh + '장' + (title ? '\n' + title : ''), '?p=lang');
 }
 
@@ -173,7 +220,7 @@ h2{font-size:15px;margin:0 0 10px;display:flex;gap:6px;align-items:baseline}.cou
 .g0{background:var(--bad-bg);color:var(--late)}.g1{background:var(--mid-bg);color:var(--mid)}.g2{background:var(--ok-bg);color:var(--ok)}
 .done{text-align:center;padding:30px 10px}.done .big{font-size:40px}
 .primary{font:inherit;font-weight:600;border:0;border-radius:8px;background:var(--accent);color:#fff;padding:9px 16px;cursor:pointer}
-.bar{height:6px;background:var(--field);border-radius:99px;overflow:hidden;margin:8px 0 12px}.bar i{display:block;height:100%;background:var(--accent)}
+.next{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;align-items:stretch}.next .primary{padding:12px}.bar{height:6px;background:var(--field);border-radius:99px;overflow:hidden;margin:8px 0 12px}.bar i{display:block;height:100%;background:var(--accent)}
 </style></head><body>
 <header><h1>외국어</h1><div class="seg" id="seg"><button data-l="ja" class="on">🇯🇵 일본어</button><button data-l="zh">🇨🇳 중국어</button></div></header>
 <main id="main"></main>
@@ -184,8 +231,8 @@ function say(t){try{var u=new SpeechSynthesisUtterance(t);u.lang=L==='ja'?'ja-JP
 function sayBtn(t){return '<button class="say" data-say="'+esc(t)+'">🔊</button>'}
 function lessonHtml(){
   var d=D[L], s=d.lesson;
-  if(!s) return '<div class="card"><h2>오늘의 학습</h2><p class="muted">아직 레슨이 없어요.</p><button class="primary" id="mk">지금 만들기</button><span class="sub" id="mkmsg"></span></div>';
-  var h='<div class="card"><h2>오늘의 학습 <span class="count">'+s.day+'일차 · '+esc(d.lessonDate.slice(4,6)+'/'+d.lessonDate.slice(6))+'</span></h2>';
+  if(!s) return '<div class="card"><h2>지금 레슨</h2><p class="muted">아직 레슨이 없어요.</p><button class="primary" id="mk">지금 만들기</button><span class="sub" id="mkmsg"></span></div>';
+  var h='<div class="card"><h2>지금 레슨 <span class="count">'+s.day+'번째</span></h2>';
   if(L==='ja'){
     var g=s.grammar||{};
     h+='<div><span class="lv">'+esc(g.level||'')+'</span><span class="sub">'+esc(s.title||'')+'</span></div><div class="pat">'+esc(g.pattern)+'</div><div class="mean">'+esc(g.meaning)+'</div>'+
@@ -199,6 +246,7 @@ function lessonHtml(){
       (x.ex?'<div class="r">'+esc(x.ex)+' · '+esc(x.expy||'')+' · '+esc(x.exko||'')+'</div>':'')+'</div></li>'}).join('')+
       (s.sentences||[]).map(function(x){return '<li>'+sayBtn(x.zh)+'<div><div class="t">'+esc(x.zh)+'</div><div class="r">'+esc(x.py)+'</div><div class="k">'+esc(x.ko)+'</div></div></li>'}).join('')+'</ul>';
   }
+  h+='<div class="next"><button class="primary" id="nx">✅ 익혔어요 · 다음 레슨</button><div class="sub" id="nxmsg">'+(d.hasNext?'다음 레슨 준비됨':'다음 레슨 준비 중 (누르면 1~2분 걸릴 수 있어요)')+'</div></div>';
   return h+'</div>';
 }
 function flashHtml(){
@@ -217,7 +265,7 @@ function render(){
   var d=D[L];
   document.getElementById('main').innerHTML=
     '<div class="tiles"><div class="tile hot"><div class="n">'+Math.max(0,Q.length-qi)+'</div><div class="l">남은 복습</div></div>'+
-    '<div class="tile"><div class="n">'+d.days+'</div><div class="l">학습일</div></div>'+
+    '<div class="tile"><div class="n">'+d.doneCount+'</div><div class="l">익힌 레슨</div></div>'+
     '<div class="tile"><div class="n">'+d.total+'</div><div class="l">전체 카드</div></div>'+
     '<div class="tile"><div class="n">'+d.mastered+'</div><div class="l">외운 카드</div></div></div>'+
     lessonHtml()+flashHtml();
@@ -231,6 +279,8 @@ document.getElementById('main').addEventListener('click',function(e){
   var g=e.target.closest('[data-g]'); if(g){var c=Q[qi],gr=Number(g.dataset.g);
     google.script.run.reviewCard(K,c.id,gr); done++;
     if(gr===0) Q.push(c); qi++; render(); return}
+  if(e.target.id==='nx'){e.target.disabled=true;var m=document.getElementById('nxmsg');m.textContent=D[L].hasNext?'넘어가는 중…':'다음 레슨 만드는 중… (1~2분)';
+    google.script.run.withSuccessHandler(function(nd){D=nd;setLang(L);window.scrollTo(0,0)}).withFailureHandler(function(er){e.target.disabled=false;m.textContent='실패: '+er.message}).nextLesson(K,L);return}
   if(e.target.id==='mk'){e.target.disabled=true;document.getElementById('mkmsg').textContent=' 만드는 중… (1~3분)';
     google.script.run.withSuccessHandler(function(nd){D=nd;setLang(L)}).withFailureHandler(function(er){document.getElementById('mkmsg').textContent=' 실패: '+er.message}).makeLangNow(K)}
 });
