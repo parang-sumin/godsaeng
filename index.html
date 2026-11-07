@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="갓생">
 <meta name="theme-color" content="#ffffff">
 <title>갓생</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
 <link rel="icon" href="icon-192.png?v=3">
@@ -25,10 +26,19 @@
   #bar button { padding: 6px 12px; font-size: 14px; }
   #bar .x { background: transparent; color: #1864ab; padding: 6px; margin-left: auto; }
   #msg { font-size: 14px; color: #1864ab; }
-  #tabs { display: flex; border-top: 1px solid #e9ecef; background: #fff; padding-bottom: env(safe-area-inset-bottom); }
-  #tabs button { flex: 1; background: transparent; color: #868e96; border-radius: 0; padding: 8px 0 6px; font-size: 12px; font-weight: 500; line-height: 1.3; }
-  #tabs button b { display: block; font-size: 20px; }
-  #tabs button.on { color: #1c7ed6; font-weight: 700; }
+  #tabs { display: flex; border-top: 1px solid #e3e5ea; background: rgba(255,255,255,.96); padding: 6px 0 calc(4px + env(safe-area-inset-bottom)); }
+  #tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: transparent; color: #9aa0aa; border-radius: 0; padding: 4px 0; font-size: 11px; font-weight: 600; letter-spacing: -.01em; font-family: Pretendard, -apple-system, sans-serif; }
+  #tabs button svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #tabs button .ic { display: flex; align-items: center; justify-content: center; width: 52px; height: 30px; border-radius: 999px; transition: background .15s; }
+  #tabs button.on { color: #3b5bdb; }
+  #tabs button.on .ic { background: #edf2ff; }
+  @media (prefers-color-scheme: dark) {
+    html, body { background: #121316; }
+    #tabs { background: rgba(27,29,34,.96); border-top-color: #2f323a; }
+    #tabs button { color: #6b7280; }
+    #tabs button.on { color: #91a7ff; }
+    #tabs button.on .ic { background: #232a45; }
+  }
 </style>
 </head>
 <body>
@@ -113,7 +123,7 @@ async function showMain() {
   $app.innerHTML = `
     <div id="bar"><span>🔔 알림을 켜면 브리핑과 일정 알림이 와요</span><button id="on">알림 켜기</button><button class="x" id="x">✕</button></div>
     <iframe id="frame" allow="clipboard-write"></iframe>
-    <div id="tabs"><button data-p="kanban"><b>📋</b>칸반</button><button data-p="brief"><b>📰</b>브리핑</button><button data-p="lang"><b>🈶</b>외국어</button></div>`;
+    <div id="tabs"><button data-p="kanban"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg></span>칸반</button><button data-p="brief"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h10A1.5 1.5 0 0 1 17 5.5V18a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z"/><path d="M17 9h2.5A1.5 1.5 0 0 1 21 10.5V18a2 2 0 0 1-2 2"/><path d="M8 8h5"/><path d="M8 12h5"/><path d="M8 16h3"/></svg></span>브리핑</button><button data-p="lang"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h8"/><path d="M8 3v2"/><path d="M10.5 5c-.6 3.6-2.8 6.4-6 8"/><path d="M5.5 8.5c1.2 2 3 3.5 5.5 4.5"/><path d="M12.5 21l4-9 4 9"/><path d="M14 18h5"/></svg></span>외국어</button></div>`;
   const frame = document.getElementById('frame');
   const open = p => {
     p = ['brief', 'lang'].indexOf(p) >= 0 ? p : 'kanban';
