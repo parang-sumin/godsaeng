@@ -187,48 +187,100 @@ function briefPage_(date) {
   const h = esc_;
   let body;
   if (!r) {
-    body = '<p class="muted">아직 브리핑이 없어요. 내일 아침 8시에 첫 브리핑이 와요.</p>';
+    body = '<header class="top"><h1>아침 브리핑</h1></header><main><div class="card empty">아직 브리핑이 없어요. 매일 아침 8시에 새 브리핑이 만들어져요.</div></main>';
   } else {
     const b = JSON.parse(r.json);
     const a = b.ai;
-    const link = (o, extra) => '<li><a href="' + h(o.link) + '" target="_blank" rel="noopener">' + h(o.title) + '</a> <span class="src">' + h(o.source) + '</span>' + (extra ? '<div class="why">' + h(extra) + '</div>' : '') + '</li>';
-    const mk = b.markets.map(m => {
-      const up = m.chg != null && m.chg >= 0;
-      return '<div class="mk"><div class="n">' + h(m.name) + '</div><div class="v">' + h(mkLine_(m).replace(m.name + ' ', '').replace(/ \(.*/, '')) + '</div>' +
-        (m.chg == null ? '<div class="c">-</div>' : '<div class="c ' + (up ? 'up' : 'dn') + '">' + (up ? '▲' : '▼') + Math.abs(m.chg).toFixed(2) + '%</div>') + '</div>';
-    }).join('');
     const w = b.work;
-    const workHtml = '<ul class="plain">' +
-      w.events.map(e => '<li>📅 ' + h(e.time + ' ' + e.title) + (e.location ? ' <span class="src">' + h(e.location) + '</span>' : '') + '</li>').join('') +
-      w.dueToday.map(x => '<li>⏰ ' + h(x) + '</li>').join('') +
-      w.late.map(x => '<li>⚠️ ' + h(x) + '</li>').join('') +
-      w.doing.map(x => '<li>▶ ' + h(x) + '</li>').join('') +
-      '<li class="muted">새 메일 ' + w.newMail + '통</li></ul>';
-    const cats = {};
-    b.news.forEach(o => { (cats[o.cat] = cats[o.cat] || []).push(o); });
-    const allNews = Object.keys(cats).map(c => '<details><summary>' + h(c) + ' (' + cats[c].length + ')</summary><ul>' + cats[c].map(o => link(o)).join('') + '</ul></details>').join('');
+    const chg = m => m.chg == null ? '<span class="pill">-</span>'
+      : '<span class="pill ' + (m.chg >= 0 ? 'up' : 'dn') + '">' + (m.chg >= 0 ? '▲' : '▼') + Math.abs(m.chg).toFixed(2) + '%</span>';
+    const val = m => (m.err || m.last == null) ? '-' : (m.sym === '^TNX' ? m.last.toFixed(2) + '%'
+      : m.last >= 1000 ? Math.round(m.last).toLocaleString('en-US') : m.last.toFixed(2));
+    const groups = [['미국', ['S&P 500', '나스닥', '다우', 'VIX']], ['아시아', ['코스피', '코스닥', '닛케이', '상하이']],
+      ['환율 · 금리 · 원자재', ['원/달러', '미 10년물', 'WTI', '금', '비트코인']]];
+    const mkHtml = groups.map(([g, names]) => '<div class="glabel">' + g + '</div><div class="tiles">' +
+      names.map(n => b.markets.find(m => m.name === n)).filter(Boolean).map(m =>
+        '<div class="tile"><div class="l">' + h(m.name) + '</div><div class="n">' + h(val(m)) + '</div>' + chg(m) + '</div>').join('') +
+      '</div>').join('');
+    const news = (list, icon) => '<ol class="news">' + list.map((o, i) =>
+      '<li><a class="item" href="' + h(o.link) + '" target="_blank" rel="noopener">' +
+      '<span class="num">' + (icon || (i + 1)) + '</span><span class="body"><span class="tt">' + h(o.title) + '</span>' +
+      (o.why ? '<span class="why">' + h(o.why) + '</span>' : '') +
+      '<span class="meta"><span class="tag">' + h(o.cat) + '</span><span class="tag src">' + h(o.source) + '</span></span></span></a></li>').join('') + '</ol>';
+    const cats = [];
+    b.news.forEach(o => { if (cats.indexOf(o.cat) < 0) cats.push(o.cat); });
+    const allNews = '<div class="chips" id="chips"><button class="chip on" data-c="">전체 ' + b.news.length + '</button>' +
+      cats.map(c => '<button class="chip" data-c="' + h(c) + '">' + h(c) + '</button>').join('') + '</div>' +
+      '<ul class="heads" id="heads">' + b.news.map(o => '<li data-c="' + h(o.cat) + '"><a href="' + h(o.link) + '" target="_blank" rel="noopener">' +
+        h(o.title) + '</a><span class="src">' + h(o.source) + '</span></li>').join('') + '</ul>';
+    const workTiles = [['일정', w.events.length, ''], ['오늘 마감', w.dueToday.length, 'warn'], ['기한 지남', w.late.length, 'late'], ['진행 중', w.doing.length, '']]
+      .map(([l, n, c]) => '<div class="tile ' + c + '"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
+    const workList = [].concat(
+      w.events.map(e => '<li><span class="k cal">' + h(e.time) + '</span>' + h(e.title) + (e.location ? ' <span class="src">' + h(e.location) + '</span>' : '') + '</li>'),
+      w.dueToday.map(x => '<li><span class="k warn">오늘</span>' + h(x) + '</li>'),
+      w.late.map(x => '<li><span class="k late">지남</span>' + h(x) + '</li>'),
+      w.doing.map(x => '<li><span class="k doing">진행</span>' + h(x) + '</li>')).join('');
+    const sec = (title, inner, o) => '<section class="card ' + (o || '') + '"><h2 class="sec">' + title + '</h2>' + inner + '</section>';
+
     body =
-      '<div class="date">' + h(b.label) + ' · ' + h(b.created) + ' 기준</div>' +
-      (a ? '<h2 class="hl">' + h(a.headline) + '</h2><ul class="plain sum">' + a.summary.map(s => '<li>' + h(s) + '</li>').join('') + '</ul>' +
-        (a.keywords.length ? '<div class="kw">' + a.keywords.map(k => '<span>#' + h(k) + '</span>').join('') + '</div>' : '')
-        : '<p class="muted">AI 요약 없음' + (b.aiErr ? ' (' + h(b.aiErr) + ')' : ' (Gemini 키 미설정)') + '</p>') +
-      '<h3>📈 시장</h3><div class="mks">' + mk + '</div>' + (a && a.market ? '<p class="note">' + h(a.market) + '</p>' : '') +
-      (a && a.top.length ? '<h3>📰 핵심 뉴스</h3><ul>' + a.top.map(o => link(o, o.why)).join('') + '</ul>' : '') +
-      (a && a.reads.length ? '<h3>📚 오늘의 읽을거리</h3><ul>' + a.reads.map(o => link(o, o.why)).join('') + '</ul>' : '') +
-      (a && a.watch.length ? '<h3>👀 주목할 일정</h3><ul class="plain">' + a.watch.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>' : '') +
-      '<h3>🗂 오늘 할 일</h3>' + workHtml +
-      '<h3>🗞 전체 헤드라인</h3>' + allNews +
-      '<p class="muted small">지난 브리핑: ' + rows.slice(0, 7).map(x => h(String(x.id).slice(5, 7) + '/' + String(x.id).slice(7))).join(' · ') + '</p>' +
-      '<p class="muted small">투자 판단은 본인 책임이에요. 이 브리핑은 정보 정리용이에요.</p>';
+      '<header class="top"><div><h1>아침 브리핑</h1><div class="sub">' + h(b.label) + ' · ' + h(String(b.created).slice(11)) + ' 기준</div></div></header><main>' +
+      (a ? '<section class="card hero"><div class="hl">' + h(a.headline) + '</div><ul class="sum">' + a.summary.map(s => '<li>' + h(s) + '</li>').join('') + '</ul>' +
+          (a.keywords.length ? '<div class="kw">' + a.keywords.map(k => '<span>#' + h(k) + '</span>').join('') + '</div>' : '') + '</section>'
+        : '<section class="card muted">AI 요약 없음' + (b.aiErr ? ' · ' + h(b.aiErr) : ' · Gemini 키 미설정') + '</section>') +
+      '<div class="grid"><div class="col">' +
+      sec('시장', mkHtml + (a && a.market ? '<p class="note">' + h(a.market) + '</p>' : ''), 'o2') +
+      (a && a.top.length ? sec('핵심 뉴스', news(a.top), 'o3') : '') +
+      (a && a.reads.length ? sec('오늘의 읽을거리', news(a.reads, '📚'), 'o4') : '') +
+      '</div><div class="col">' +
+      sec('오늘 할 일', '<div class="tiles t4">' + workTiles + '</div>' + (workList ? '<ul class="work">' + workList + '</ul>' : '<p class="muted">오늘 예정된 일이 없어요.</p>') +
+        '<p class="sub">새 메일 ' + w.newMail + '통</p>', 'o1') +
+      (a && a.watch.length ? sec('주목할 일정', '<ul class="watch">' + a.watch.map(x => '<li>' + h(x) + '</li>').join('') + '</ul>', 'o5') : '') +
+      '</div></div>' +
+      sec('전체 헤드라인', allNews) +
+      '<p class="foot">지난 브리핑 ' + rows.slice(0, 7).map(x => h(String(x.id).slice(5, 7) + '/' + String(x.id).slice(7))).join(' · ') +
+      '<br>정보 정리용이며 투자 권유가 아니에요.</p></main>' +
+      '<script>document.getElementById("chips").addEventListener("click",function(e){var c=e.target.closest(".chip");if(!c)return;' +
+      'document.querySelectorAll(".chip").forEach(function(x){x.classList.toggle("on",x===c)});var v=c.dataset.c;' +
+      'document.querySelectorAll("#heads li").forEach(function(li){li.hidden=!!v&&li.dataset.c!==v})});</script>';
   }
-  return HtmlService.createHtmlOutput(
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;margin:0;padding:16px 16px 40px;color:#222;line-height:1.55;max-width:760px;margin:0 auto}' +
-    'h2.hl{font-size:20px;margin:6px 0 8px}h3{font-size:16px;margin:22px 0 8px;border-top:1px solid #eee;padding-top:14px}' +
-    'a{color:#1864ab;text-decoration:none}ul{padding-left:18px;margin:0}li{margin:6px 0}ul.plain{list-style:none;padding:0}.sum li{margin:4px 0}' +
-    '.src{color:#999;font-size:12px}.why{color:#555;font-size:13px}.muted{color:#888}.small{font-size:12px}.date{color:#888;font-size:13px}' +
-    '.kw span{display:inline-block;background:#e7f5ff;color:#1864ab;border-radius:12px;padding:2px 10px;margin:4px 4px 0 0;font-size:13px}' +
-    '.mks{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px}.mk{background:#f8f9fa;border-radius:10px;padding:8px 10px}' +
-    '.mk .n{font-size:12px;color:#666}.mk .v{font-weight:600}.mk .c{font-size:12px}.up{color:#e03131}.dn{color:#1c7ed6}.note{font-size:14px;color:#444}' +
-    'details{margin:6px 0}summary{cursor:pointer;font-weight:600}</style>' + body
-  ).setTitle('아침 브리핑').addMetaTag('viewport', 'width=device-width, initial-scale=1').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  const css = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"><style>' +
+    ':root{--bg:#f5f6f8;--card:#fff;--text:#1d1f23;--muted:#6b7280;--line:#e3e5ea;--accent:#3b5bdb;--late:#e03131;--field:#f1f3f5;' +
+    '--up:#e03131;--up-bg:#fff0f0;--dn:#1c7ed6;--dn-bg:#e7f5ff;--cal:#e7f0ff;--cal-t:#1c4fd1;--manual:#f1ecff;--manual-t:#6d28d9}' +
+    '@media (prefers-color-scheme:dark){:root{--bg:#121316;--card:#24262c;--text:#eceef2;--muted:#9aa0aa;--line:#2f323a;--accent:#748ffc;--late:#ff6b6b;' +
+    '--field:#1b1d22;--up:#ff6b6b;--up-bg:#3a1f22;--dn:#74c0fc;--dn-bg:#1b2b3d;--cal:#1d2a44;--cal-t:#9ab6ff;--manual:#2a2143;--manual-t:#c4b0ff}}' +
+    '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.5}' +
+    'a{color:inherit;text-decoration:none}.muted{color:var(--muted)}.sub{color:var(--muted);font-size:12px}[hidden]{display:none!important}' +
+    'header.top{padding:16px 16px 4px;max-width:1100px;margin:0 auto}h1{font-size:20px;margin:0;letter-spacing:-.02em}' +
+    'main{padding:8px 16px 32px;max-width:1100px;margin:0 auto}' +
+    '.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}' +
+    'h2.sec{font-size:15px;margin:0 0 10px;display:flex;gap:6px;align-items:baseline}.count{color:var(--muted);font-weight:500}' +
+    '.hero .hl{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.4;margin-bottom:8px}' +
+    '.sum{margin:0;padding-left:18px;color:var(--text)}.sum li{margin:3px 0}' +
+    '.kw{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}.kw span{background:var(--manual);color:var(--manual-t);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}' +
+    '.grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(280px,2fr);gap:12px;align-items:start}.col{min-width:0}' +
+    '@media (max-width:760px){.grid{display:flex;flex-direction:column;align-items:stretch;gap:0}.col{display:contents}.o1{order:1}.o2{order:2}.o3{order:3}.o4{order:4}.o5{order:5}' +
+    '.card .tiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.card .tile{padding:8px 8px}.card .tile .l{font-size:11px}.card .tile .n{font-size:15px}.card .t4 .tile .n{font-size:20px}.pill{padding:1px 5px;font-size:10px}}' +
+    '.glabel{font-size:12px;color:var(--muted);font-weight:600;margin:10px 0 6px}.glabel:first-of-type{margin-top:0}' +
+    '.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.tiles.t4{grid-template-columns:repeat(4,minmax(0,1fr))}' +
+    '.tile{background:var(--field);border-radius:10px;padding:9px 11px}.tile .l{color:var(--muted);font-size:12px}' +
+    '.tile .n{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.3}.t4 .tile .n{font-size:22px}' +
+    '.tile.late .n{color:var(--late)}.tile.warn .n{color:#f08c00}' +
+    '.pill{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:1px 7px;margin-top:2px;color:var(--muted)}' +
+    '.pill.up{color:var(--up);background:var(--up-bg)}.pill.dn{color:var(--dn);background:var(--dn-bg)}' +
+    '.note{margin:12px 0 0;padding:10px 12px;background:var(--field);border-radius:10px;font-size:13px;color:var(--muted)}' +
+    '.news{list-style:none;margin:0;padding:0}.news li+li{border-top:1px solid var(--line)}' +
+    '.item{display:flex;gap:10px;padding:10px 0}.num{flex:none;width:22px;height:22px;border-radius:7px;background:var(--cal);color:var(--cal-t);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}' +
+    '.body{display:flex;flex-direction:column;gap:3px;min-width:0}.tt{font-weight:600;line-height:1.4}.why{color:var(--muted);font-size:13px}' +
+    '.meta{display:flex;gap:4px;flex-wrap:wrap}.tag{font-size:11px;border-radius:999px;padding:1px 8px;background:var(--field);color:var(--muted)}' +
+    '.work,.watch{list-style:none;margin:10px 0 0;padding:0}.work li,.watch li{padding:7px 0;border-top:1px solid var(--line)}' +
+    '.k{display:inline-block;font-size:11px;font-weight:600;border-radius:6px;padding:1px 6px;margin-right:6px;background:var(--field);color:var(--muted)}' +
+    '.k.cal{background:var(--cal);color:var(--cal-t)}.k.warn{background:#fff4e6;color:#e8590c}.k.late{background:var(--up-bg);color:var(--late)}.k.doing{background:var(--manual);color:var(--manual-t)}' +
+    '.watch li::before{content:"• ";color:var(--accent)}' +
+    '.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.chip{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:999px;padding:5px 11px;cursor:pointer}' +
+    '.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}' +
+    '.heads{list-style:none;margin:0;padding:0}.heads li{padding:8px 0;border-top:1px solid var(--line)}.heads a{font-size:14px}' +
+    '.src{color:var(--muted);font-size:12px;margin-left:6px}.foot{text-align:center;color:var(--muted);font-size:12px;margin-top:16px;line-height:1.7}' +
+    '.empty{text-align:center;color:var(--muted);padding:40px 14px}</style>';
+  return HtmlService.createHtmlOutput(css + body).setTitle('아침 브리핑')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
