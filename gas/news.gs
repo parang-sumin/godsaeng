@@ -9,7 +9,7 @@ const NEWS_FEEDS = [
   ['미국 경제', 'Google News', 'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en'],
   ['세계', 'Google News', 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en'],
   ['미국 증시', 'CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'],
-  ['미국 증시', 'Yahoo Finance', 'https://finance.yahoo.com/news/rssindex'],
+  ['미국 증시', 'Google News', 'https://news.google.com/rss/search?q=stock+market+when:1d&hl=en-US&gl=US&ceid=US:en'],
 ];
 const NEWS_PER_FEED = 12;
 
