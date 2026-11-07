@@ -20,9 +20,11 @@ self.addEventListener('push', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = new URL((e.notification.data && e.notification.data.link) || './', self.registration.scope).href;
+  const link = (e.notification.data && e.notification.data.link) || '';
+  const url = new URL(link || './', self.registration.scope).href;
+  const p = new URL(url).searchParams.get('p');
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
-    for (const c of cs) if ('focus' in c) return c.focus();
+    for (const c of cs) if ('focus' in c) { if (p) c.postMessage({ open: p }); return c.focus(); }
     return self.clients.openWindow(url);
   }));
 });

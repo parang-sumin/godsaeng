@@ -3,25 +3,7 @@
 const FCM_PROJECT = 'godsaeng-233c4';
 const D_HEAD = ['id', 'token', 'ua', 'created', 'lastOk'];
 
-function sendMorningBrief() {
-  syncTasks();
-  const b = getBoard();
-  const today = fmt_(new Date(), 'yyyy-MM-dd');
-  const evs = b.events.filter(e => evStart_(e) <= today && evEnd_(e) >= today)
-    .sort((a, b2) => String(a.start).localeCompare(String(b2.start)));
-  const open = b.tasks.filter(t => !t.deleted && t.status !== 'done');
-  const dueToday = open.filter(t => t.due === today);
-  const late = open.filter(t => t.due && t.due < today);
-  const doing = open.filter(t => t.status === 'doing');
-  const newMail = b.mails.filter(m => m.state === 'new').length;
-
-  const L = ['일정 ' + evs.length + ' · 오늘 마감 ' + dueToday.length + ' · 기한 지남 ' + late.length + ' · 새 메일 ' + newMail];
-  evs.slice(0, 4).forEach(e => L.push('📅 ' + (e.allDay ? '종일' : fmt_(new Date(e.start), 'HH:mm')) + ' ' + e.title));
-  dueToday.slice(0, 3).forEach(t => L.push('⏰ ' + t.title));
-  late.slice(0, 2).forEach(t => L.push('⚠️ ' + t.title));
-  doing.slice(0, 2).forEach(t => L.push('▶ ' + t.title));
-  sendPush_('☀️ ' + fmt_(new Date(), 'M/d E') + ' 업무 브리핑', L.join('\n'));
-}
+// sendMorningBrief → news.gs
 
 function sendDueAlerts() {
   const t = tbl_(CONFIG.EVENT_SHEET, E_HEAD);

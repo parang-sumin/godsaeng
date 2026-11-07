@@ -25,6 +25,10 @@
   #bar button { padding: 6px 12px; font-size: 14px; }
   #bar .x { background: transparent; color: #1864ab; padding: 6px; margin-left: auto; }
   #msg { font-size: 14px; color: #1864ab; }
+  #tabs { display: flex; border-top: 1px solid #e9ecef; background: #fff; padding-bottom: env(safe-area-inset-bottom); }
+  #tabs button { flex: 1; background: transparent; color: #868e96; border-radius: 0; padding: 8px 0 6px; font-size: 12px; font-weight: 500; line-height: 1.3; }
+  #tabs button b { display: block; font-size: 20px; }
+  #tabs button.on { color: #1c7ed6; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -108,7 +112,18 @@ async function registerPush(silent) {
 async function showMain() {
   $app.innerHTML = `
     <div id="bar"><span>🔔 알림을 켜면 브리핑과 일정 알림이 와요</span><button id="on">알림 켜기</button><button class="x" id="x">✕</button></div>
-    <iframe id="frame" src="${GAS}?k=${encodeURIComponent(key)}" allow="clipboard-write"></iframe>`;
+    <iframe id="frame" allow="clipboard-write"></iframe>
+    <div id="tabs"><button data-p="kanban"><b>📋</b>칸반</button><button data-p="brief"><b>📰</b>브리핑</button></div>`;
+  const frame = document.getElementById('frame');
+  const open = p => {
+    p = p === 'brief' ? 'brief' : 'kanban';
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+    const src = GAS + '?k=' + encodeURIComponent(key) + (p === 'brief' ? '&page=brief' : '');
+    if (p === 'brief' || frame.dataset.p !== p) { frame.src = src; frame.dataset.p = p; }
+  };
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => open(b.dataset.p));
+  open(new URLSearchParams(location.search).get('p'));
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.open) open(e.data.open); });
   const bar = document.getElementById('bar');
   const supported = 'Notification' in window && 'serviceWorker' in navigator && await isSupported().catch(() => false);
   if (!supported) return;
