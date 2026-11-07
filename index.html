@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="갓생">
+<meta name="theme-color" content="#ffffff">
+<title>갓생</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif; }
+  #app { position: fixed; inset: 0; padding-top: env(safe-area-inset-top); box-sizing: border-box; display: flex; flex-direction: column; }
+  #frame { flex: 1; width: 100%; border: 0; }
+  .screen { max-width: 420px; margin: 0 auto; padding: 48px 20px; line-height: 1.6; color: #222; }
+  .screen h1 { font-size: 24px; margin: 0 0 8px; }
+  .screen p { color: #555; }
+  input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 12px; border: 1px solid #ccc; border-radius: 10px; margin: 12px 0; }
+  button { font-size: 16px; padding: 12px 18px; border: 0; border-radius: 10px; background: #1c7ed6; color: #fff; font-weight: 600; }
+  #bar { display: none; align-items: center; gap: 10px; padding: 8px 12px; background: #e7f5ff; font-size: 14px; color: #1864ab; }
+  #bar button { padding: 6px 12px; font-size: 14px; }
+  #bar .x { background: transparent; color: #1864ab; padding: 6px; margin-left: auto; }
+  #msg { font-size: 14px; color: #1864ab; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { getMessaging, getToken, isSupported } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
+
+const GAS = 'https://script.google.com/macros/s/AKfycbymqLQTpP66A9kWfl-tIuFqMOBeZBxC9YR6Y7TQFwvY_-IIHJMrySbmRb8xN_2T-EkC/exec';
+const VAPID = 'BMXmuSbI5YiHcma0p3rn2Y1uMVYcupjPktAnVttgrkzH5KCTbZJJ1bo_pSfvjFFXOPq6vg9wkm7ZllOHT_Uwo1I';
+const firebaseConfig = {
+  apiKey: 'AIzaSyD34Z7lyAvZhb5J5lo9nfeV2YwpMyGRLOo',
+  authDomain: 'godsaeng-233c4.firebaseapp.com',
+  projectId: 'godsaeng-233c4',
+  storageBucket: 'godsaeng-233c4.firebasestorage.app',
+  messagingSenderId: '1097517603627',
+  appId: '1:1097517603627:web:dfe2239b8213937147c36e',
+};
+
+const $app = document.getElementById('app');
+const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+let key = localStorage.getItem('gk') || '';
+
+async function api(params) {
+  const q = new URLSearchParams({ ...params, k: key });
+  const r = await fetch(GAS + '?' + q.toString());
+  return r.json();
+}
+
+function showSetup(err) {
+  $app.innerHTML = `
+    <div class="screen">
+      <h1>갓생 ✅</h1>
+      <p>처음 한 번만 <b>연결 코드</b>를 넣어주세요.</p>
+      <input id="key" placeholder="연결 코드 붙여넣기" autocomplete="off" autocapitalize="off">
+      <button id="go">연결</button>
+      <p id="msg">${err || ''}</p>
+    </div>`;
+  document.getElementById('go').onclick = async () => {
+    key = document.getElementById('key').value.trim();
+    document.getElementById('msg').textContent = '확인 중…';
+    try {
+      const r = await api({ api: 'ping' });
+      if (!r.ok) throw new Error();
+      localStorage.setItem('gk', key);
+      showMain();
+    } catch (_) {
+      document.getElementById('msg').textContent = '코드가 맞지 않아요. 다시 확인해주세요.';
+    }
+  };
+}
+
+function showInstallHelp() {
+  $app.innerHTML = `
+    <div class="screen">
+      <h1>갓생 ✅</h1>
+      <p>알림을 받으려면 홈 화면에 앱을 추가해야 해요.</p>
+      <ol>
+        <li>아래쪽 <b>공유 버튼</b>(네모에 위 화살표)을 누르고</li>
+        <li><b>홈 화면에 추가</b>를 누른 다음</li>
+        <li>홈 화면에 생긴 <b>갓생</b> 아이콘으로 열어주세요.</li>
+      </ol>
+    </div>`;
+}
+
+async function registerPush(silent) {
+  const reg = await navigator.serviceWorker.register('sw.js');
+  await navigator.serviceWorker.ready;
+  const messaging = getMessaging(initializeApp(firebaseConfig));
+  const token = await getToken(messaging, { vapidKey: VAPID, serviceWorkerRegistration: reg });
+  if (!token) throw new Error('토큰을 받지 못했어요');
+  if (!silent || localStorage.getItem('ft') !== token) {
+    const r = await api({ api: 'register', token, ua: navigator.userAgent });
+    if (!r.ok) throw new Error(r.error || '등록 실패');
+    localStorage.setItem('ft', token);
+  }
+}
+
+async function showMain() {
+  $app.innerHTML = `
+    <div id="bar"><span>🔔 알림을 켜면 브리핑과 일정 알림이 와요</span><button id="on">알림 켜기</button><button class="x" id="x">✕</button></div>
+    <iframe id="frame" src="${GAS}?k=${encodeURIComponent(key)}" allow="clipboard-write"></iframe>`;
+  const bar = document.getElementById('bar');
+  const supported = 'Notification' in window && 'serviceWorker' in navigator && await isSupported().catch(() => false);
+  if (!supported) return;
+  if (Notification.permission === 'granted') {
+    registerPush(true).catch(e => console.warn(e));
+  } else if (Notification.permission === 'default' && !localStorage.getItem('barHidden')) {
+    bar.style.display = 'flex';
+  }
+  document.getElementById('x').onclick = () => { bar.style.display = 'none'; localStorage.setItem('barHidden', '1'); };
+  document.getElementById('on').onclick = async () => {
+    const span = bar.querySelector('span');
+    try {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') { span.textContent = '알림이 허용되지 않았어요 (설정 → 알림에서 바꿀 수 있어요)'; return; }
+      span.textContent = '연결 중…';
+      await registerPush(false);
+      span.textContent = '✅ 알림 연결 완료! 곧 확인 알림이 와요';
+      setTimeout(() => { bar.style.display = 'none'; }, 4000);
+    } catch (e) {
+      span.textContent = '연결 실패: ' + (e.message || e);
+    }
+  };
+}
+
+(async () => {
+  if (isIOS && !standalone) return showInstallHelp();
+  if (!key) return showSetup();
+  try {
+    const r = await api({ api: 'ping' });
+    if (!r.ok) { localStorage.removeItem('gk'); key = ''; return showSetup('연결 코드를 다시 넣어주세요.'); }
+  } catch (_) { /* 오프라인 등: 그대로 진행 */ }
+  showMain();
+})();
+</script>
+</body>
+</html>
