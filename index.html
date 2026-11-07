@@ -113,13 +113,13 @@ async function showMain() {
   $app.innerHTML = `
     <div id="bar"><span>🔔 알림을 켜면 브리핑과 일정 알림이 와요</span><button id="on">알림 켜기</button><button class="x" id="x">✕</button></div>
     <iframe id="frame" allow="clipboard-write"></iframe>
-    <div id="tabs"><button data-p="kanban"><b>📋</b>칸반</button><button data-p="brief"><b>📰</b>브리핑</button></div>`;
+    <div id="tabs"><button data-p="kanban"><b>📋</b>칸반</button><button data-p="brief"><b>📰</b>브리핑</button><button data-p="lang"><b>🈶</b>외국어</button></div>`;
   const frame = document.getElementById('frame');
   const open = p => {
-    p = p === 'brief' ? 'brief' : 'kanban';
+    p = ['brief', 'lang'].indexOf(p) >= 0 ? p : 'kanban';
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
-    const src = GAS + '?k=' + encodeURIComponent(key) + (p === 'brief' ? '&page=brief' : '');
-    if (p === 'brief' || frame.dataset.p !== p) { frame.src = src; frame.dataset.p = p; }
+    const src = GAS + '?k=' + encodeURIComponent(key) + (p !== 'kanban' ? '&page=' + p : '');
+    if (p !== 'kanban' || frame.dataset.p !== p) { frame.src = src; frame.dataset.p = p; }
   };
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => open(b.dataset.p));
   open(new URLSearchParams(location.search).get('p'));
