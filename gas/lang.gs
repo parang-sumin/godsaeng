@@ -7,6 +7,32 @@ const LANG_HOUR = 6;      // 매일 새벽: 다음 레슨 미리 만들어 두�
 const LANG_ALERT_HOUR = 21; // 복습 알림 시각
 const LANG_NAME = { ja: '일본어', zh: '중국어' };
 
+/** 레슨 전용 Gemini 호출: 빠른 lite 모델 우선, 혼잡하면 잠깐 쉬고 다시, 그래도 안 되면 다른 모델 */
+function langGemini_(prompt) {
+  const models = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
+  let lastErr = '';
+  for (let mi = 0; mi < models.length; mi++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[mi] + ':generateContent', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+        payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } }),
+      });
+      const code = res.getResponseCode();
+      let data = {};
+      try { data = JSON.parse(res.getContentText()); } catch (e) {}
+      if (code === 200) {
+        const txt = ((((data.candidates || [])[0] || {}).content || {}).parts || []).map(p => p.text || '').join('');
+        try { return JSON.parse(txt.replace(/^```(json)?\s*|\s*```$/g, '')); } catch (e) { lastErr = 'JSON 형식 오류'; continue; }
+      }
+      lastErr = (data.error && data.error.message) || String(code);
+      if (code === 400 || code === 403) break; // 모델 문제 → 다음 모델로
+      Utilities.sleep(attempt ? 8000 : 3000);
+    }
+  }
+  throw new Error('레슨 생성 실패: ' + lastErr);
+}
+
 function ymdNum_(d) { return Number(fmt_(d || new Date(), 'yyyyMMdd')); }
 function lessonStatus_(r) { return r.status || 'current'; } // 예전 레슨(상태 없음)은 '지금 배우는 중'
 
@@ -67,7 +93,7 @@ function makeLesson_(lang, status) {
       '"words":[{"zh":"간체자","py":"성조 표시 병음(예: nǐ hǎo)","ko":"뜻","ex":"아주 쉬운 예문(간체)","expy":"예문 병음","exko":"예문 뜻"}] (5개),' +
       '"sentences":[{"zh":"이 단어들로 만든 짧은 문장","py":"병음","ko":"뜻"}] (2개)}';
   }
-  const d = JSON.parse(gemini_(prompt, true));
+  const d = langGemini_(prompt);
   d.day = day;
   const lid = 'L' + lang + ('000' + day).slice(-4) + '_' + Utilities.getUuid().slice(0, 4);
   lt.append({ id: lid, date: fmt_(new Date(), 'yyyy-MM-dd HH:mm'), lang, json: JSON.stringify(d), status });
@@ -98,21 +124,23 @@ function addLessonCards_(lang, lid, d) {
 function nextLesson(k, lang) {
   if (!keyOk_(k)) throw new Error('key');
   if (['ja', 'zh'].indexOf(lang) < 0) throw new Error('lang');
-  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  const lt = tbl_('LangLessons', LESSON_HEAD);
+  const findReady = () => lt.rows().filter(r => r.id && r.lang === lang && r.status === 'ready').sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+  // 준비된 레슨이 없으면 먼저 만든다 (실패하면 지금 레슨은 그대로 둠)
+  if (!findReady()) makeLesson_(lang, 'ready');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
-    const lt = tbl_('LangLessons', LESSON_HEAD);
+    const ready = findReady();
+    if (!ready) throw new Error('다음 레슨을 찾지 못했어요');
     lt.rows().filter(r => r.id && r.lang === lang && lessonStatus_(r) === 'current').forEach(r => { r.status = 'done'; lt.put(r); });
-    const ready = lt.rows().filter(r => r.id && r.lang === lang && r.status === 'ready').sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
-    if (ready) {
-      ready.status = 'current'; lt.put(ready);
-      addLessonCards_(lang, ready.id, JSON.parse(ready.json));
-    } else {
-      makeLesson_(lang, 'current');
-    }
+    ready.status = 'current'; lt.put(ready);
+    addLessonCards_(lang, ready.id, JSON.parse(ready.json));
   } finally { lock.releaseLock(); }
-  // 그다음 레슨은 뒤에서 미리 만들어 둠 (약 1분 뒤)
-  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'prefetchLang').forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('prefetchLang').timeBased().after(30 * 1000).create();
+  // 그다음 레슨은 뒤에서 미리 만들어 둠
+  try {
+    ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'prefetchLang').forEach(t => ScriptApp.deleteTrigger(t));
+    ScriptApp.newTrigger('prefetchLang').timeBased().after(20 * 1000).create();
+  } catch (e) { console.warn('미리 만들기 예약 실패: ' + e); }
   return langData_();
 }
 
