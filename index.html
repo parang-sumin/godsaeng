@@ -135,6 +135,13 @@ async function showMain() {
   open(new URLSearchParams(location.search).get('p'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.open) open(e.data.open); });
   const bar = document.getElementById('bar');
+  if (isIOS && !standalone && !localStorage.getItem('installHidden')) {
+    bar.style.display = 'flex';
+    bar.querySelector('span').textContent = '📲 공유 → 홈 화면에 추가하면 알림도 받을 수 있어요';
+    document.getElementById('on').style.display = 'none';
+    document.getElementById('x').onclick = () => { bar.style.display = 'none'; localStorage.setItem('installHidden', '1'); };
+    return;
+  }
   const supported = 'Notification' in window && 'serviceWorker' in navigator && await isSupported().catch(() => false);
   if (!supported) return;
   if (Notification.permission === 'granted') {
@@ -159,7 +166,6 @@ async function showMain() {
 }
 
 (async () => {
-  if (isIOS && !standalone) return showInstallHelp();
   if (!key) return showSetup();
   try {
     const r = await api({ api: 'ping' });
