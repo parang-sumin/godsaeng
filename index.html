@@ -10,6 +10,8 @@
 <meta name="theme-color" content="#ffffff">
 <title>갓생</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
 <link rel="icon" href="icon-192.png?v=3">
@@ -45,8 +47,11 @@
 <div id="app"></div>
 
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getMessaging, getToken, isSupported } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
+// Firebase는 알림 등록할 때만 불러옴 (첫 화면 속도)
+const fb = () => Promise.all([
+  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js'),
+  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js'),
+]).then(([a, m]) => ({ initializeApp: a.initializeApp, getMessaging: m.getMessaging, getToken: m.getToken, isSupported: m.isSupported }));
 
 const GAS = 'https://script.google.com/macros/s/AKfycbymqLQTpP66A9kWfl-tIuFqMOBeZBxC9YR6Y7TQFwvY_-IIHJMrySbmRb8xN_2T-EkC/exec';
 const VAPID = 'BMXmuSbI5YiHcma0p3rn2Y1uMVYcupjPktAnVttgrkzH5KCTbZJJ1bo_pSfvjFFXOPq6vg9wkm7ZllOHT_Uwo1I';
@@ -109,6 +114,7 @@ function showInstallHelp() {
 async function registerPush(silent) {
   const reg = await navigator.serviceWorker.register('sw.js');
   await navigator.serviceWorker.ready;
+  const { initializeApp, getMessaging, getToken } = await fb();
   const messaging = getMessaging(initializeApp(firebaseConfig));
   const token = await getToken(messaging, { vapidKey: VAPID, serviceWorkerRegistration: reg });
   if (!token) throw new Error('토큰을 받지 못했어요');
@@ -142,7 +148,7 @@ async function showMain() {
     document.getElementById('x').onclick = () => { bar.style.display = 'none'; localStorage.setItem('installHidden', '1'); };
     return;
   }
-  const supported = 'Notification' in window && 'serviceWorker' in navigator && await isSupported().catch(() => false);
+  const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
   if (!supported) return;
   if (Notification.permission === 'granted') {
     registerPush(true).catch(e => console.warn(e));
@@ -167,10 +173,10 @@ async function showMain() {
 
 (async () => {
   if (!key) return showSetup();
-  try {
-    const r = await api({ api: 'ping' });
-    if (!r.ok) { localStorage.removeItem('gk'); key = ''; return showSetup('연결 코드를 다시 넣어주세요.'); }
-  } catch (_) { /* 오프라인 등: 그대로 진행 */ }
+  showMain();
+  // 연결 코드 확인은 뒤에서 (틀렸을 때만 다시 입력 화면)
+  api({ api: 'ping' }).then(r => { if (r && r.ok === false) { localStorage.removeItem('gk'); key = ''; showSetup('연결 코드를 다시 넣어주세요.'); } }).catch(() => {});
+  return;
   showMain();
 })();
 </script>
