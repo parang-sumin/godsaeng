@@ -26,7 +26,8 @@ function supGet_(url) {
 function supBizinfo_() {
   const out = [], seen = {};
   ['서울', '창업'].forEach(tag => {
-    const j = JSON.parse(supGet_('https://www.bizinfo.go.kr/uss/rss/bizinfoApi.do?crtfcKey=' + encodeURIComponent(prop_('BIZINFO_KEY')) + '&dataType=json&searchCnt=500&hashtags=' + encodeURIComponent(tag)));
+    let j = {};
+    try { j = JSON.parse(supGet_('https://www.bizinfo.go.kr/uss/rss/bizinfoApi.do?crtfcKey=' + encodeURIComponent(prop_('BIZINFO_KEY')) + '&dataType=json&searchCnt=150&hashtags=' + encodeURIComponent(tag))); } catch (e) { console.warn('기업마당 ' + tag + ' ' + e); return; }
     (j.jsonArray || []).forEach(x => {
       if (seen[x.pblancId]) return; seen[x.pblancId] = 1;
       const txt = x.pblancNm + ' ' + x.hashtags + ' ' + (x.trgetNm || '');
