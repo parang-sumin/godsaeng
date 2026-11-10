@@ -93,26 +93,17 @@ function supLh_() {
   return out;
 }
 
-/** 서울 청년안심주택 공고 게시판 (API 없음 → 목록 화면 읽기) */
+/** 서울 청년안심주택 공고 게시판 (공식 API 없음 → 게시판 목록 JSON) */
 function supSoco_() {
-  const base = 'https://soco.seoul.go.kr';
-  const html = UrlFetchApp.fetch(base + '/youth/bbs/BMSR00015/list.do?menuNo=400008', { muteHttpExceptions: true }).getContentText();
-  const body = (html.match(/<tbody[\s\S]*?<\/tbody>/) || [''])[0];
-  const out = [];
-  (body.match(/<tr[\s\S]*?<\/tr>/g) || []).slice(0, 15).forEach(tr => {
-    const tds = (tr.match(/<td[\s\S]*?<\/td>/g) || []).map(t => supText_(t, 200));
-    const a = tr.match(/<a[^>]*?(?:href="([^"]*)")?[^>]*?(?:onclick="([^"]*)")?[^>]*>([\s\S]*?)<\/a>/);
-    const title = a ? supText_(a[3], 120) : (tds[1] || '');
-    if (!title || /모집|공고/.test(title) === false) return;
-    const num = (a && (a[2] || a[1] || '').match(/(\d{3,})/)) || null;
-    const link = a && a[1] && a[1].indexOf('javascript') < 0 ? (a[1].indexOf('http') === 0 ? a[1] : base + a[1].replace(/&amp;/g, '&'))
-      : base + '/youth/bbs/BMSR00015/list.do?menuNo=400008';
-    const dates = tds.map(supDate_).filter(Boolean);
-    out.push({ id: 'sc' + (num ? num[1] : Utilities.base64Encode(title).slice(0, 16)), cat: 'personal', src: '청년안심주택', title: '[청년안심주택] ' + title, org: '서울시',
-      start: dates[0] || '', end: '', announce: '', target: '만 19~39세 무주택 청년 (공고별 소득·자산 기준)', summary: '공고일 ' + (dates[0] || '-') + ' · 신청 기간은 원문 확인', link });
-  });
-  if (!out.length) console.warn('청년안심주택 목록 읽기 실패: ' + body.slice(0, 600));
-  return out;
+  const base = 'https://soco.seoul.go.kr/youth';
+  const r = UrlFetchApp.fetch(base + '/pgm/home/yohome/bbsListJson.json', { method: 'post', payload: { bbsId: 'BMSR00015', pageIndex: '1' }, muteHttpExceptions: true });
+  const since = fmt_(addDays_(new Date(), -30), 'yyyy-MM-dd');
+  return (JSON.parse(r.getContentText()).resultList || []).filter(x => (x.optn1 || '') >= since).map(x => ({
+    id: 'sc' + x.boardId, cat: 'personal', src: '청년안심주택', title: '[청년안심주택] ' + x.nttSj.replace(/^\[[^\]]*\]\s*/, '') + (x.optn2 === '1' ? ' (공공)' : x.optn2 === '2' ? ' (민간)' : ''),
+    org: x.optn3 || '서울시', start: supDate_(x.optn4), end: '', announce: '',
+    target: '만 19~39세 무주택 청년 (공고별 소득·자산 기준)', summary: '공고 ' + x.optn1 + ' · 청약신청일 ' + (x.optn4 || '-') + ' · 상세 기간은 공고문 확인',
+    link: base + '/bbs/BMSR00015/view.do?boardId=' + x.boardId + '&menuNo=400008',
+  }));
 }
 
 /** 뉴스로만 알 수 있는 것들(청년 정책 · 공모전) → Gemini가 '지금 모집 중'만 골라 정리 */
