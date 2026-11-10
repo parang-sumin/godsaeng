@@ -135,7 +135,7 @@ function supNews_(cat) {
   let arr = [];
   try { arr = langGemini_(prompt); } catch (e) { console.warn('support gemini ' + e); return []; }
   return (Array.isArray(arr) ? arr : []).filter(x => heads[x.i]).map(x => ({
-    id: 'nw' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, cat + (x.title || ''))).slice(0, 12),
+    id: 'nw' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, heads[x.i].t.replace(/\s+-\s+[^-]+$/, ''))).slice(0, 12),
     cat, src: '뉴스', title: x.title, org: x.org || '', start: supDate_(x.start), end: supDate_(x.end), announce: '',
     target: x.target || '원문 확인', summary: x.summary || '', link: heads[x.i].l,
   }));
