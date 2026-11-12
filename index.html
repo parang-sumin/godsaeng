@@ -18,7 +18,12 @@
 <style>
   html, body { margin: 0; height: 100%; background: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif; }
   #app { position: fixed; inset: 0; padding-top: env(safe-area-inset-top); box-sizing: border-box; display: flex; flex-direction: column; }
-  #frame { flex: 1; width: 100%; border: 0; }
+  #views { flex: 1; position: relative; overflow: hidden; }
+  #views iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; visibility: hidden; background: #f5f6f8; }
+  #views iframe.on { visibility: visible; }
+  #views .load { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa0aa; font-size: 14px; font-family: Pretendard, -apple-system, sans-serif; }
+  #toast { display: none; position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #1d1f23; color: #fff; font-size: 13px; padding: 8px 14px; border-radius: 999px; z-index: 9; font-family: Pretendard, -apple-system, sans-serif; white-space: nowrap; }
+  @media (prefers-color-scheme: dark) { #views iframe { background: #121316; } }
   .screen { max-width: 420px; margin: 0 auto; padding: 48px 20px; line-height: 1.6; color: #222; }
   .screen h1 { font-size: 24px; margin: 0 0 8px; }
   .screen p { color: #555; }
@@ -128,16 +133,78 @@ async function registerPush(silent) {
 async function showMain() {
   $app.innerHTML = `
     <div id="bar"><span>🔔 알림을 켜면 브리핑과 일정 알림이 와요</span><button id="on">알림 켜기</button><button class="x" id="x">✕</button></div>
-    <iframe id="frame" allow="clipboard-write"></iframe>
+    <div id="views"></div><div id="toast"></div>
     <div id="tabs"><button data-p="kanban"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg></span>칸반</button><button data-p="brief"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h10A1.5 1.5 0 0 1 17 5.5V18a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z"/><path d="M17 9h2.5A1.5 1.5 0 0 1 21 10.5V18a2 2 0 0 1-2 2"/><path d="M8 8h5"/><path d="M8 12h5"/><path d="M8 16h3"/></svg></span>브리핑</button><button data-p="lang"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h8"/><path d="M8 3v2"/><path d="M10.5 5c-.6 3.6-2.8 6.4-6 8"/><path d="M5.5 8.5c1.2 2 3 3.5 5.5 4.5"/><path d="M12.5 21l4-9 4 9"/><path d="M14 18h5"/></svg></span>외국어</button><button data-p="support"><span class="ic"><svg viewBox="0 0 24 24"><path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8"/><rect x="3" y="7" width="18" height="5" rx="1"/><path d="M12 7v14"/><path d="M12 7c-1.5-3-5-3.5-5-1.2C7 7 9.5 7 12 7z"/><path d="M12 7c1.5-3 5-3.5 5-1.2C17 7 14.5 7 12 7z"/></svg></span>지원</button></div>`;
-  const frame = document.getElementById('frame');
+  /* 화면 4개를 각각 띄워두고 숨겼다 보여주기만 함. 화면 HTML은 폰에 저장해 두고 바로 보여준 뒤, 뒤에서 최신으로 교체 */
+  const VIEWS = ['kanban', 'brief', 'lang', 'support'];
+  const $views = document.getElementById('views'), $toast = document.getElementById('toast');
+  const frames = {}, touched = {}, loading = {};
+  let cur = '';
+  const SHIM = '<script>(function(){var P=window.parent;function mk(s,f){var h={withSuccessHandler:function(x){return mk(x,f)},withFailureHandler:function(x){return mk(s,x)},withUserObject:function(){return h}};' +
+    'return new Proxy(h,{get:function(t,n){if(n in t)return t[n];return function(){var a=[].slice.call(arguments);P.__rpc(n,a).then(function(r){s&&s(r)},function(e){if(f)f(e);else console.error(e)})}}})}' +
+    'window.google={script:{run:mk(),host:{close:function(){},setHeight:function(){},setWidth:function(){}}}};})();<\/script>';
+  window.__rpc = async (fn, args) => {
+    const r = await fetch(GAS, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ k: key, fn, args }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '실패');
+    return j.data;
+  };
+  const toast = (t, ms) => { $toast.textContent = t; $toast.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => { $toast.style.display = 'none'; }, ms || 2500); };
+  const inject = html => /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m => m + SHIM) : SHIM + html;
+  const mount = (p, html) => {
+    let f = frames[p];
+    if (!f) { f = frames[p] = document.createElement('iframe'); f.setAttribute('allow', 'clipboard-write'); $views.appendChild(f); }
+    touched[p] = false;
+    f.onload = () => { try { f.contentWindow.addEventListener('pointerdown', () => { touched[p] = true; }, true); } catch (_) {} };
+    f.srcdoc = inject(html);
+    f.classList.toggle('on', p === cur);
+    const ld = document.getElementById('ld-' + p); if (ld) ld.remove();
+  };
+  const fetchPage = async (p, force) => {
+    if (loading[p]) return loading[p];
+    loading[p] = (async () => {
+      try {
+        const r = await api({ api: 'page', name: p });
+        if (!r.ok) throw new Error(r.error || '불러오기 실패');
+        const old = localStorage.getItem('pg:' + p);
+        try { localStorage.setItem('pg:' + p, r.html); } catch (_) {}
+        if (!frames[p]) mount(p, r.html);
+        else if (r.html !== old || force) {
+          if (!touched[p] || p !== cur || force) mount(p, r.html);
+          else toast('새 내용이 있어요 · 탭을 한 번 더 누르면 새로고침', 3500);
+        }
+      } catch (e) {
+        if (!frames[p] && p === cur) { const ld = document.getElementById('ld-' + p); if (ld) ld.textContent = '불러오지 못했어요 · 탭을 다시 눌러주세요'; }
+      } finally { loading[p] = null; }
+    })();
+    return loading[p];
+  };
   const open = p => {
-    p = ['brief', 'lang', 'support'].indexOf(p) >= 0 ? p : 'kanban';
+    p = VIEWS.indexOf(p) >= 0 ? p : 'kanban';
+    if (p === cur && frames[p]) { toast('새로고침 중…', 1200); fetchPage(p, true); return; } // 같은 탭 다시 누르면 새로고침
+    cur = p;
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
-    const src = GAS + '?k=' + encodeURIComponent(key) + (p !== 'kanban' ? '&page=' + p : '');
-    if (p !== 'kanban' || frame.dataset.p !== p) { frame.src = src; frame.dataset.p = p; }
+    Object.keys(frames).forEach(k => frames[k].classList.toggle('on', k === p));
+    if (!frames[p]) {
+      const cached = localStorage.getItem('pg:' + p);
+      if (cached) mount(p, cached);
+      else if (!document.getElementById('ld-' + p)) { const d = document.createElement('div'); d.className = 'load'; d.id = 'ld-' + p; d.textContent = '불러오는 중…'; $views.appendChild(d); }
+      fetchPage(p);
+    }
+    VIEWS.forEach(v => { const ld = document.getElementById('ld-' + v); if (ld) ld.style.display = v === p ? 'flex' : 'none'; });
   };
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => open(b.dataset.p));
+  // 첫 화면 뒤에 나머지 탭도 미리 불러둠 (캐시가 있으면 바로 화면에 올려둠)
+  setTimeout(() => VIEWS.forEach((v, i) => setTimeout(() => {
+    if (!frames[v]) { const c = localStorage.getItem('pg:' + v); if (c) mount(v, c); }
+    if (v !== cur) fetchPage(v);
+  }, 400 * i)), 1500);
+  // 앱으로 돌아왔을 때 오래됐으면 뒤에서 갱신
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt && Date.now() - hiddenAt > 10 * 60 * 1000) VIEWS.forEach(v => { if (frames[v]) fetchPage(v); });
+  });
   open(new URLSearchParams(location.search).get('p'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.open) open(e.data.open); });
   const bar = document.getElementById('bar');

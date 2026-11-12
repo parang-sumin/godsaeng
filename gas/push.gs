@@ -67,7 +67,33 @@ function api_(p) {
     if (!ex) t.append({ id: Utilities.getUuid(), token: p.token, ua: String(p.ua || '').slice(0, 120), created: fmt_(new Date(), 'yyyy-MM-dd HH:mm') });
     return json({ ok: true, sent: sendPush_('✅ 알림 연결 완료', '이제 이 기기로 브리핑과 일정 알림이 와요.') });
   }
+  if (p.api === 'page') {
+    try { return json({ ok: true, html: appPage_(p.name, p) }); } catch (e) { return json({ ok: false, error: String(e.message || e) }); }
+  }
+  if (p.api === 'rpc') return json(rpcSafe_(p.fn, p.a ? JSON.parse(p.a) : []));
   return json({ ok: false, error: 'unknown' });
+}
+
+/* ── 빠른 화면: 앱(GitHub)이 화면 HTML과 데이터를 직접 받아감 ── */
+const RPC_OK_ = ['getBoard', 'updateStatus', 'addTask', 'updateTask', 'hideTask', 'restoreTask', 'addEvent', 'updateEvent', 'addProject', 'updateProject', 'deleteProject', 'syncTasks', 'markMail', 'mailToTask', 'addMemo', 'updateMemo', 'deleteMemo', 'deleteEvent', 'composeMail', 'saveDraft', 'setSupport', 'nextLesson', 'reviewCard', 'makeLangNow'];
+function appPage_(name, p) {
+  if (name === 'kanban') return HtmlService.createHtmlOutputFromFile('Index').getContent();
+  if (name === 'brief') return briefPage_(p.d).getContent();
+  if (name === 'lang') return langPage_(p.k).getContent();
+  if (name === 'support') return supportPage_(p.k).getContent();
+  throw new Error('없는 화면: ' + name);
+}
+function rpcSafe_(fn, args) {
+  if (RPC_OK_.indexOf(fn) < 0) return { ok: false, error: '허용되지 않은 기능: ' + fn };
+  try { const out = globalThis[fn].apply(null, Array.isArray(args) ? args : []); return { ok: true, data: out === undefined ? null : out }; }
+  catch (e) { return { ok: false, error: String(e.message || e) }; }
+}
+function doPost(e) {
+  const json = o => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  let b = {};
+  try { b = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json({ ok: false, error: 'json' }); }
+  if (!keyOk_(b.k)) return json({ ok: false, error: 'key' });
+  return json(rpcSafe_(b.fn, b.args));
 }
 
 function keyOk_(k) { const key = prop_('APP_KEY'); return !!key && k === key; }
