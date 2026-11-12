@@ -85,8 +85,22 @@ function appPage_(name, p) {
 }
 function rpcSafe_(fn, args) {
   if (RPC_OK_.indexOf(fn) < 0) return { ok: false, error: '허용되지 않은 기능: ' + fn };
-  try { const out = globalThis[fn].apply(null, Array.isArray(args) ? args : []); return { ok: true, data: out === undefined ? null : out }; }
+  try {
+    if (fn === 'getBoard') return { ok: true, data: boardCached_() };
+    const out = globalThis[fn].apply(null, Array.isArray(args) ? args : []);
+    try { CacheService.getScriptCache().remove('board'); } catch (e) {} // 바뀐 게 있으니 저장해 둔 칸반 버림
+    return { ok: true, data: out === undefined ? null : out };
+  }
   catch (e) { return { ok: false, error: String(e.message || e) }; }
+}
+/** 칸반 데이터를 3분간 서버에 저장해 두고 바로 돌려줌 (앱에서 고치면 즉시 지움) */
+function boardCached_() {
+  const c = CacheService.getScriptCache();
+  const hit = c.get('board');
+  if (hit) return JSON.parse(hit);
+  const b = JSON.parse(JSON.stringify(getBoard()));
+  try { c.put('board', JSON.stringify(b), 180); } catch (e) {}
+  return b;
 }
 function doPost(e) {
   const json = o => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);

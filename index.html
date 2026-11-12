@@ -143,8 +143,12 @@ async function showMain() {
   const SHIM = '<script>(function(){var P=window.parent;function mk(s,f){var h={withSuccessHandler:function(x){return mk(x,f)},withFailureHandler:function(x){return mk(s,x)},withUserObject:function(){return h}};' +
     'return new Proxy(h,{get:function(t,n){if(n in t)return t[n];return function(){var a=[].slice.call(arguments);P.__rpc(n,a).then(function(r){s&&s(r)},function(e){if(f)f(e);else console.error(e)})}}})}' +
     'window.google={script:{run:mk(),host:{close:function(){},setHeight:function(){},setWidth:function(){}}}};})();<\/script>';
+  // 읽기만 하는 기능은 GET(한 단계 짧음), 저장·수정은 POST
+  const READ = ['getBoard'];
   window.__rpc = async (fn, args) => {
-    const r = await fetch(GAS, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ k: key, fn, args }) });
+    const r = READ.indexOf(fn) >= 0
+      ? await fetch(GAS + '?' + new URLSearchParams({ api: 'rpc', fn, a: JSON.stringify(args || []), k: key }))
+      : await fetch(GAS, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ k: key, fn, args }) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '실패');
     return j.data;
